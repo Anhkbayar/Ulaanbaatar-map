@@ -1,11 +1,13 @@
-import { PointerLockControls, useGLTF } from '@react-three/drei'
+import { PointerLockControls } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import * as THREE from 'three'
 import MobileControls from './MobileControls'
 
 type MovementKey = 'w' | 'a' | 's' | 'd' | 'space' | 'c'
 type MovementKeys = Record<MovementKey, boolean>
+type PlayerControlsProps = { cityRef: RefObject<THREE.Group | null> }
 
 const KEY_BINDINGS: Record<string, MovementKey> = {
   KeyW: 'w',
@@ -33,9 +35,8 @@ function updateKeyState(
   keys.current[key] = pressed
 }
 
-export default function PlayerControls() {
+export default function PlayerControls({ cityRef }: PlayerControlsProps) {
   const { camera } = useThree()
-  const { scene: city } = useGLTF('/models/13.glb')
   const keys = useRef<MovementKeys>({
     w: false,
     a: false,
@@ -81,17 +82,20 @@ export default function PlayerControls() {
     if (keys.current.d) direction.current.add(right.current)
     if (keys.current.a) direction.current.sub(right.current)
 
+    const city = cityRef.current
     const moveAxis = (axis: 'x' | 'y' | 'z', amount: number) => {
       if (amount === 0) return
 
-      collisionDirection.current.set(0, 0, 0)
-      collisionDirection.current[axis] = Math.sign(amount)
-      raycaster.current.set(camera.position, collisionDirection.current)
-      raycaster.current.far = COLLISION_DISTANCE
+      if (city) {
+        collisionDirection.current.set(0, 0, 0)
+        collisionDirection.current[axis] = Math.sign(amount)
+        raycaster.current.set(camera.position, collisionDirection.current)
+        raycaster.current.far = COLLISION_DISTANCE
 
-      if (raycaster.current.intersectObject(city, true).length === 0) {
-        camera.position[axis] += amount
+        if (raycaster.current.intersectObject(city, true).length > 0) return
       }
+
+      camera.position[axis] += amount
     }
 
     if (direction.current.lengthSq() > 0) {
@@ -105,14 +109,16 @@ export default function PlayerControls() {
       Number(keys.current.space) - Number(keys.current.c) + look.current.vertical
     moveAxis('y', verticalInput * MOVE_SPEED * delta)
 
-    raycaster.current.set(camera.position, groundDirection.current)
-    raycaster.current.far = 1000
-    const groundHit = raycaster.current.intersectObject(city, true)[0]
-    const minimumHeight = groundHit
-      ? groundHit.point.y + EYE_HEIGHT
-      : MINIMUM_CITY_HEIGHT
+    if (city) {
+      raycaster.current.set(camera.position, groundDirection.current)
+      raycaster.current.far = 1000
+      const groundHit = raycaster.current.intersectObject(city, true)[0]
+      const minimumHeight = groundHit
+        ? groundHit.point.y + EYE_HEIGHT
+        : MINIMUM_CITY_HEIGHT
 
-    camera.position.y = Math.max(camera.position.y, minimumHeight)
+      camera.position.y = Math.max(camera.position.y, minimumHeight)
+    }
   })
 
   return (
