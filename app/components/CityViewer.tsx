@@ -1,64 +1,104 @@
 'use client'
 
 import { Environment, Grid, useGLTF } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
-import { useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { makeGrassMaterial, makeWallMaterial } from './Materials'
 import PlayerControls from './PlayerControls'
 import StartScreen from './StartScreen'
 
-type CityMaterials = {
-  grass: THREE.MeshToonMaterial
-  wall: THREE.MeshToonMaterial
+type CityTileData = {
+  file: string
+  center: [number, number]
 }
 
-function CityTile({
-  x,
-  z,
-  materials,
-}: {
-  x: number
-  z: number
-  materials: CityMaterials
-}) {
-  const { scene } = useGLTF(`/models/tile_${x}_${z}.glb`)
-  const tileScene = useMemo(() => {
-    const clone = scene.clone(true)
+type CityTileManifest = {
+  tiles: CityTileData[]
+}
 
-    clone.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return
+const TILE_ENTER_DISTANCE = 2200
+const TILE_EXIT_DISTANCE = 2600
+const TILE_UPDATE_INTERVAL = 0.2
 
-      const applyCityMaterials = (source: THREE.Material) => {
-        if (source.name === 'Toon_grass') return materials.grass
-        if (source.name === 'wall') return materials.wall
-        return source
-      }
+function CityTile({ file }: { file: string }) {
+  const { scene } = useGLTF(`/models/${file}`)
 
-      object.material = Array.isArray(object.material)
-        ? object.material.map(applyCityMaterials)
-        : applyCityMaterials(object.material)
-    })
-
-    return clone
-  }, [materials, scene])
-
-  return <primitive object={tileScene} />
+  return <primitive object={scene} />
 }
 
 function City() {
-  const materials = useMemo(
-    () => ({ grass: makeGrassMaterial(), wall: makeWallMaterial() }),
-    [],
-  )
+  const { camera } = useThree()
+  const [tiles, setTiles] = useState<CityTileData[]>([])
+  const [activeFiles, setActiveFiles] = useState<string[]>([])
+  const timeSinceUpdate = useRef(0)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch('/models/tiles.json')
+      .then((response) => {
+        if (!response.ok) throw new Error(`Tile manifest request failed: ${response.status}`)
+        return response.json() as Promise<CityTileManifest>
+      })
+      .then((manifest) => {
+        if (cancelled) return
+
+        const validTiles = manifest.tiles.filter(
+          (tile) =>
+            /^tile_\d+_\d+\.glb$/.test(tile.file) &&
+            tile.center.length === 2 &&
+            tile.center.every(Number.isFinite),
+        )
+        setTiles(validTiles)
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to load city tile manifest', error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useFrame((_, delta) => {
+    timeSinceUpdate.current += delta
+    if (timeSinceUpdate.current < TILE_UPDATE_INTERVAL || tiles.length === 0) return
+    timeSinceUpdate.current = 0
+
+    const cameraX = camera.position.x
+    const cameraZ = camera.position.z
+    const currentFiles = new Set(activeFiles)
+    const nextFiles = tiles
+      .filter((tile) => {
+        // GLB tiles are Y-up; their manifest's second coordinate maps to negative Z.
+        const tileX = tile.center[0]
+        const tileZ = -tile.center[1]
+        const distance = Math.hypot(tileX - cameraX, tileZ - cameraZ)
+        const limit = currentFiles.has(tile.file)
+          ? TILE_EXIT_DISTANCE
+          : TILE_ENTER_DISTANCE
+
+        return distance <= limit
+      })
+      .map((tile) => tile.file)
+
+    setActiveFiles((currentFiles) =>
+      currentFiles.length === nextFiles.length &&
+      currentFiles.every((file, index) => file === nextFiles[index])
+        ? currentFiles
+        : nextFiles,
+    )
+  })
+
+  const activeTiles = tiles.filter((tile) => activeFiles.includes(tile.file))
 
   return (
     <group>
-      {Array.from({ length: 13 }, (_, x) =>
-        Array.from({ length: 8 }, (_, z) => (
-          <CityTile key={`${x}_${z}`} x={x} z={z} materials={materials} />
-        )),
-      )}
+      {activeTiles.map((tile) => (
+        <Suspense fallback={null} key={tile.file}>
+          <CityTile file={tile.file} />
+        </Suspense>
+      ))}
     </group>
   )
 }
@@ -83,7 +123,7 @@ export default function CityViewer() {
         }}
       >
         <color attach="background" args={['#87ceeb']} />
-        <ambientLight intensity={0.7} />
+        <ambientLight intensity={0.3} />
         <directionalLight position={[500, 1000, 500]} intensity={1.2} />
         <Environment preset="city" />
         <group ref={cityRef}>

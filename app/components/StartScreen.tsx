@@ -24,6 +24,7 @@ export default function StartScreen({ onStart }: StartScreenProps) {
           Desktop: WASD to move, Space/C to rise and descend, and click the view to look around.
           <br />
           Touch: drag on the right side to look, and use the arrow buttons to rise or descend.
+          Distance culling implemented will make it better, Odoo oirthoor info ugdug bolhin XD
         </p>
         <button
           type="button"

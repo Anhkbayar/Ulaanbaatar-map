@@ -81,18 +81,26 @@ export function makeGrassMaterial() {
          if (n > 0.60) col = vec3(0.56, 0.83, 0.37);        // light 8ED45F
 
          // 2. small darker tufts, faded out with distance to avoid shimmer
-         vec2 cell = floor(vWorld.xz / 1.5);
-         vec2 pt = (cell + 0.3 + 0.4 * hash2(cell)) * 1.5;
-         float tuft = 1.0 - smoothstep(0.18, 0.22, length(vWorld.xz - pt));
-         float fade = 1.0 - smoothstep(120.0, 300.0, distance(vWorld, cameraPosition));
-         col *= 1.0 - 0.18 * tuft * fade;
+         float fade = 1.0 - smoothstep(25.0, 90.0, distance(vWorld, cameraPosition));
+
+         vec2 cell = floor(vWorld.xz / 0.25);
+         vec2 pt = (cell + 0.2 + 0.6 * hash2(cell)) * 0.25;
+         float fleck = 1.0 - smoothstep(0.035, 0.05, length(vWorld.xz - pt));
+
+         // a second, lighter layer with a different grid so it doesn't look like a regular dot pattern
+         vec2 cell2 = floor((vWorld.xz + 7.3) / 0.4);
+         vec2 pt2 = (cell2 + 0.2 + 0.6 * hash2(cell2 + 3.7)) * 0.4 - 7.3;
+         float fleck2 = 1.0 - smoothstep(0.04, 0.06, length(vWorld.xz - pt2));
+
+         col *= 1.0 - 0.22 * fleck * fade;
+         col  = mix(col, col * 1.18, fleck2 * fade);
 
          // 3. dirt on steep slopes (hard edge)
-         if (vWorldNormal.y < 0.8) col = vec3(0.61, 0.42, 0.25);   // 9B6B3F
+         if (vWorldNormal.y < 0.2) col = vec3(0.61, 0.42, 0.25);   // 9B6B3F
 
          diffuseColor.rgb = srgb(col);`);
   };
 
-  mat.customProgramCacheKey = () => 'grass-v1';
+  mat.customProgramCacheKey = () => 'grass-v3';
   return mat;
 }
